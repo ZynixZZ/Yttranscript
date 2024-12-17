@@ -23,8 +23,22 @@ const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 app.post('/api/convert', async (req, res) => {
     try {
         const { videoId } = req.body;
+        if (!videoId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Video ID is required'
+            });
+        }
+
         console.log('Processing video ID:', videoId);
         console.log('Using YouTube API Key:', API_KEY ? 'Key is present' : 'Key is missing');
+
+        if (!API_KEY) {
+            return res.status(500).json({
+                success: false,
+                error: 'YouTube API key is not configured'
+            });
+        }
 
         // Get video details and transcript using the transcript endpoint
         const videoResponse = await youtube.videos.list({
@@ -36,13 +50,16 @@ app.post('/api/convert', async (req, res) => {
         });
 
         if (!videoResponse.data.items || videoResponse.data.items.length === 0) {
-            throw new Error('Video not found');
+            return res.status(404).json({
+                success: false,
+                error: 'Video not found'
+            });
         }
 
         // Use the YouTube transcript API instead
         const transcript = await getTranscript(videoId);
 
-        res.json({ 
+        return res.json({ 
             success: true,
             text: transcript,
             videoTitle: videoResponse.data.items[0].snippet.title
@@ -51,7 +68,16 @@ app.post('/api/convert', async (req, res) => {
     } catch (error) {
         console.error('Error details:', error);
         console.error('Stack trace:', error.stack);
-        res.status(500).json({ 
+        
+        // Send a more specific status code based on the error
+        let statusCode = 500;
+        if (error.message.includes('not have automatic captions')) {
+            statusCode = 400;
+        } else if (error.message.includes('Video not found') || error.message.includes('unavailable')) {
+            statusCode = 404;
+        }
+
+        return res.status(statusCode).json({ 
             success: false, 
             error: error.message,
             details: error.response ? error.response.data : null
@@ -64,10 +90,22 @@ async function getTranscript(videoId) {
     const { YoutubeTranscript } = require('youtube-transcript');
     
     try {
+        console.log('Attempting to fetch transcript for video:', videoId);
         const transcriptItems = await YoutubeTranscript.fetchTranscript(videoId);
+        if (!transcriptItems || transcriptItems.length === 0) {
+            throw new Error('No transcript items found');
+        }
+        console.log('Successfully fetched transcript with', transcriptItems.length, 'items');
         return transcriptItems.map(item => item.text).join(' ');
     } catch (error) {
-        throw new Error('Could not fetch transcript. Make sure the video has captions available.');
+        console.error('Transcript Error:', error);
+        if (error.message.includes('Could not find automatic captions')) {
+            throw new Error('This video does not have automatic captions available.');
+        } else if (error.message.includes('Video is unavailable')) {
+            throw new Error('The video is unavailable or private.');
+        } else {
+            throw new Error(`Failed to fetch transcript: ${error.message}`);
+        }
     }
 }
 
