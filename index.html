@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Tools</title>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <div class="nav-container">
+        <nav>
+            <button class="nav-btn active" onclick="showForm('youtube-form')">YouTube to Text</button>
+            <button class="nav-btn" onclick="showForm('ai-form')">AI Chat</button>
+        </nav>
+    </div>
+
+    <div class="container">
+        <!-- YouTube to Text Form -->
+        <div id="youtube-form" class="form-section active">
+            <h1>YouTube to Text Converter</h1>
+            <p>Convert YouTube video captions to text</p>
+            
+            <div class="input-group">
+                <input type="text" id="urlInput" placeholder="Paste YouTube URL here">
+                <button onclick="convertToText()">Convert</button>
+            </div>
+            
+            <div id="result"></div>
+        </div>
+
+        <!-- AI Chat Form -->
+        <div id="ai-form" class="form-section">
+            <h1>AI Video Analysis</h1>
+            <p>Ask questions about the converted video</p>
+            
+            <div id="no-transcript-message">
+                Please convert a YouTube video in the YouTube to Text tab first.
+            </div>
+
+            <div class="chat-section" id="chatSection" style="display: none;">
+                <div class="video-info" id="videoInfo">
+                    <!-- Video title will be displayed here -->
+                </div>
+                <div class="chat-messages" id="chatMessages">
+                    <!-- Messages will be added here -->
+                </div>
+                <div class="chat-input-group">
+                    <input type="text" 
+                           id="chatInput" 
+                           class="chat-input" 
+                           placeholder="Ask a question about the video..."
+                           onkeypress="if(event.key === 'Enter') askAI()">
+                    <button onclick="askAI()">Ask AI</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let videoTranscript = '';
+        let currentVideoTitle = '';
+        let conversationHistory = [];  // Store conversation history
+        let currentSummary = '';
+
+        function showForm(formId) {
+            // Hide all forms
+            document.querySelectorAll('.form-section').forEach(form => {
+                form.classList.remove('active');
+            });
+            // Show selected form
+            document.getElementById(formId).classList.add('active');
+            // Update nav buttons
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // Update AI form based on transcript availability
+            if (formId === 'ai-form') {
+                updateAIFormState();
+            }
+        }
+
+        function updateAIFormState() {
+            const noTranscriptMessage = document.getElementById('no-transcript-message');
+            const chatSection = document.getElementById('chatSection');
+            const videoInfo = document.getElementById('videoInfo');
+
+            if (videoTranscript) {
+                noTranscriptMessage.style.display = 'none';
+                chatSection.style.display = 'block';
+                videoInfo.innerHTML = `<h3>Currently analyzing: ${currentVideoTitle}</h3>`;
+            } else {
+                noTranscriptMessage.style.display = 'block';
+                chatSection.style.display = 'none';
+            }
+        }
+
+        async function convertToText() {
+            const urlInput = document.getElementById('urlInput');
+            const result = document.getElementById('result');
+            const url = urlInput.value.trim();
+            
+            if (!url) {
+                result.textContent = "Please enter a YouTube URL";
+                return;
+            }
+
+            try {
+                const videoId = extractVideoId(url);
+                result.innerHTML = '<div class="loading"></div> Converting...';
+                
+                const response = await fetch('/api/convert', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ videoId })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    videoTranscript = data.text;
+                    currentVideoTitle = data.videoTitle;
+
+                    // Update the input group to include the summarize button
+                    const inputGroup = document.querySelector('.input-group');
+                    if (!document.getElementById('summarizeBtn')) {
+                        const summarizeBtn = document.createElement('button');
+                        summarizeBtn.id = 'summarizeBtn';
+                        summarizeBtn.textContent = 'Summarize';
+                        summarizeBtn.onclick = summarizeText;
+                        inputGroup.appendChild(summarizeBtn);
+                    }
+
+                    result.innerHTML = `
+                        <h3>Video Title: ${data.videoTitle}</h3>
+                        <div class="caption-text">${data.text}</div>
+                        <div class="buttons-container">
+                            <button onclick="copyToClipboard()" class="copy-btn">Copy to Clipboard</button>
+                        </div>
+                    `;
+                    updateAIFormState();
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (error) {
+                result.textContent = "Error: " + error.message;
+            }
+        }
+
+        async function summarizeText() {
+            const result = document.getElementById('result');
+            const originalContent = result.innerHTML;
+            
+            try {
+                result.innerHTML = '<div class="loading"></div> Generating summary...';
+                
+                const response = await fetch('/api/summarize', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ text: videoTranscript })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    currentSummary = data.summary;
+                    result.innerHTML = `
+                        <h3>Video Title: ${currentVideoTitle}</h3>
+                        <div class="summary-section">
+                            <h4>Summary:</h4>
+                            <div class="summary-text">${data.summary}<button class="expand-summary" onclick="expandSummary()">+</button></div>
+                        </div>
+                        <div class="buttons-container">
+                            <button onclick="copyToClipboard()" class="copy-btn">Copy to Clipboard</button>
+                            <button onclick="showOriginalText()" class="toggle-btn">Show Original Text</button>
+                        </div>
+                    `;
+                    // Store original content for toggling
+                    result.setAttribute('data-original', originalContent);
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (error) {
+                result.innerHTML = originalContent;
+                alert('Error generating summary: ' + error.message);
+            }
+        }
+
+        async function expandSummary() {
+            const summaryText = document.querySelector('.summary-text');
+            
+            try {
+                const response = await fetch('/api/expand-summary', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        text: videoTranscript,
+                        currentSummary: currentSummary
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    currentSummary = data.summary;
+                    summaryText.innerHTML = `${data.summary}<button class="expand-summary" onclick="expandSummary()">+</button>`;
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (error) {
+                alert('Error expanding summary: ' + error.message);
+            }
+        }
+
+        function showOriginalText() {
+            const result = document.getElementById('result');
+            const originalContent = result.getAttribute('data-original');
+            if (originalContent) {
+                result.innerHTML = originalContent;
+            }
+        }
+
+        async function askAI() {
+            if (!videoTranscript) {
+                alert('Please convert a YouTube video first!');
+                return;
+            }
+
+            const chatInput = document.getElementById('chatInput');
+            const question = chatInput.value.trim();
+            
+            if (!question) return;
+
+            // Add user message immediately
+            addMessageToChat('user', question);
+            chatInput.value = '';
+
+            // Add loading animation
+            const loadingId = 'loading-' + Date.now();
+            const loadingHtml = `
+                <div id="${loadingId}" class="message ai-message">
+                    <div class="loading-container">
+                        <div class="honeycomb">
+                            <div></div>
+                            <div></div>
+                            <div></div>
+                        </div>
+                    </div>
+                </div>`;
+            chatMessages.insertAdjacentHTML('beforeend', loadingHtml);
+
+            try {
+                const response = await fetch('/api/ask-ai', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        question,
+                        transcript: videoTranscript,
+                        history: conversationHistory  // Send conversation history
+                    })
+                });
+
+                const data = await response.json();
+                
+                // Wait for 1.5 seconds before showing the response
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                // Remove loading animation
+                document.getElementById(loadingId).remove();
+                
+                if (data.success) {
+                    addMessageToChat('ai', data.answer);
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (error) {
+                // Remove loading animation
+                document.getElementById(loadingId).remove();
+                addMessageToChat('ai', 'Sorry, I encountered an error: ' + error.message);
+            }
+        }
+
+        function addMessageToChat(type, content) {
+            const chatMessages = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}-message`;
+            messageDiv.textContent = content;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            // Add message to conversation history
+            conversationHistory.push({ role: type, content: content });
+        }
+
+        function extractVideoId(url) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
+
+        function copyToClipboard() {
+            const text = document.querySelector('.caption-text').textContent;
+            navigator.clipboard.writeText(text)
+                .then(() => alert('Text copied to clipboard!'))
+                .catch(err => console.error('Failed to copy text:', err));
+        }
+    </script>
+</body>
+</html>
