@@ -18,6 +18,7 @@
     "google-auth-library": "^9.15.0",
     "googleapis": "^144.0.0",
     "oauth2client": "^1.0.0",
+    "youtube-caption-extractor": "^1.4.3",
     "youtube-transcript": "^1.2.1"
   }
 }

@@ -101,56 +101,73 @@ app.post('/api/convert', async (req, res) => {
 
 async function getTranscript(videoId) {
     const { YoutubeTranscript } = require('youtube-transcript');
+    const { getSubtitles } = require('youtube-caption-extractor');
     
+    console.log('Attempting to fetch transcript for video:', videoId);
+    
+    // Try multiple methods to get the transcript
+    const errors = [];
+    
+    // Method 1: YouTube Transcript API
     try {
-        console.log('Checking captions availability for video:', videoId);
-        
-        // First, check if captions are available using YouTube API
-        try {
-            const captionsResponse = await youtube.captions.list({
-                part: 'snippet',
-                videoId: videoId
-            });
-
-            console.log('Captions response:', captionsResponse.data);
-
-            if (!captionsResponse.data.items || captionsResponse.data.items.length === 0) {
-                console.log('No captions found in YouTube API, trying transcript API...');
-            }
-        } catch (apiError) {
-            if (apiError.message.includes('403')) {
-                console.error('YouTube API permission error:', apiError);
-                console.log('Continuing with transcript API due to permission error...');
-            } else {
-                throw apiError;
-            }
-        }
-
-        // Try fetching transcript regardless of YouTube API response
-        console.log('Attempting to fetch transcript...');
+        console.log('Trying YouTube Transcript API...');
         const transcriptItems = await YoutubeTranscript.fetchTranscript(videoId);
-        
-        if (!transcriptItems || transcriptItems.length === 0) {
-            throw new Error('No transcript items found');
+        if (transcriptItems && transcriptItems.length > 0) {
+            console.log('Successfully got transcript using YouTube Transcript API');
+            return transcriptItems.map(item => item.text).join(' ');
         }
-        
-        console.log('Successfully fetched transcript with', transcriptItems.length, 'items');
-        return transcriptItems.map(item => item.text).join(' ');
     } catch (error) {
-        console.error('Transcript Error:', error);
+        console.error('YouTube Transcript API Error:', error);
+        errors.push(error.message);
+    }
+
+    // Method 2: YouTube Caption Extractor
+    try {
+        console.log('Trying YouTube Caption Extractor...');
+        const subtitles = await getSubtitles({
+            videoID: videoId,
+            lang: 'en'  // Try English first
+        });
         
-        if (error.message.includes('403')) {
-            throw new Error('YouTube API key does not have proper permissions. Please enable YouTube Data API v3 and Captions endpoint.');
+        if (subtitles && subtitles.length > 0) {
+            console.log('Successfully got transcript using Caption Extractor');
+            return subtitles.map(item => item.text).join(' ');
         }
-        
-        if (error.message.includes('Could not find automatic captions') || 
-            error.message.includes('Transcript is disabled')) {
-            throw new Error('This video does not have captions available.');
-        } else if (error.message.includes('Video is unavailable')) {
-            throw new Error('The video is unavailable or private.');
-        } else {
-            throw new Error(`Failed to fetch transcript: ${error.message}`);
+    } catch (error) {
+        console.error('Caption Extractor Error:', error);
+        errors.push(error.message);
+    }
+
+    // Method 3: Try YouTube Data API directly
+    try {
+        console.log('Trying YouTube Data API...');
+        const captionsResponse = await youtube.captions.list({
+            part: 'snippet',
+            videoId: videoId
+        });
+
+        if (captionsResponse.data.items && captionsResponse.data.items.length > 0) {
+            // If we find captions but couldn't get them with other methods,
+            // it might be a permission issue
+            throw new Error('Captions exist but could not be accessed. The video might have restricted captions.');
         }
+    } catch (error) {
+        console.error('YouTube API Error:', error);
+        errors.push(error.message);
+    }
+
+    // If all methods failed, provide a detailed error
+    console.error('All transcript fetching methods failed');
+    console.error('Errors encountered:', errors);
+    
+    if (errors.some(e => e.includes('Could not find automatic captions') || 
+                     e.includes('Transcript is disabled') ||
+                     e.includes('subtitles are disabled'))) {
+        throw new Error('This video does not have available captions. Please try a different video.');
+    } else if (errors.some(e => e.includes('private') || e.includes('unavailable'))) {
+        throw new Error('This video is private or unavailable.');
+    } else {
+        throw new Error('Failed to fetch transcript. Please make sure the video has captions enabled and try again.');
     }
 }
 
