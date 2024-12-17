@@ -9,9 +9,23 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const API_KEY = process.env.YOUTUBE_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-app.use(cors());
+// Configure CORS
+app.use(cors({
+    origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'https://yttranscript-7d84.onrender.com'],
+    methods: ['GET', 'POST'],
+    credentials: true
+}));
+
 app.use(express.json());
 app.use(express.static('.'));
+
+// Add request logging middleware
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+    console.log('Request headers:', req.headers);
+    console.log('Request body:', req.body);
+    next();
+});
 
 const youtube = google.youtube({
     version: 'v3',

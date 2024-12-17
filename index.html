@@ -62,6 +62,11 @@
         let conversationHistory = [];  // Store conversation history
         let currentSummary = '';
 
+        // Add API URL configuration
+        const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? ''  // Use relative URL for localhost
+            : 'https://yttranscript-7d84.onrender.com'; // Your Render deployment URL
+
         function showForm(formId) {
             // Hide all forms
             document.querySelectorAll('.form-section').forEach(form => {
@@ -110,7 +115,7 @@
                 const videoId = extractVideoId(url);
                 result.innerHTML = '<div class="loading"></div> Converting...';
                 
-                const response = await fetch('/api/convert', {
+                const response = await fetch(`${API_BASE_URL}/api/convert`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -145,7 +150,8 @@
                     throw new Error(data.error);
                 }
             } catch (error) {
-                result.textContent = "Error: " + error.message;
+                console.error('Fetch error:', error);
+                result.textContent = "Error: " + (error.message || 'Failed to connect to the server');
             }
         }
 
@@ -156,7 +162,7 @@
             try {
                 result.innerHTML = '<div class="loading"></div> Generating summary...';
                 
-                const response = await fetch('/api/summarize', {
+                const response = await fetch(`${API_BASE_URL}/api/summarize`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -193,7 +199,7 @@
             const summaryText = document.querySelector('.summary-text');
             
             try {
-                const response = await fetch('/api/expand-summary', {
+                const response = await fetch(`${API_BASE_URL}/api/expand-summary`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -254,7 +260,7 @@
             chatMessages.insertAdjacentHTML('beforeend', loadingHtml);
 
             try {
-                const response = await fetch('/api/ask-ai', {
+                const response = await fetch(`${API_BASE_URL}/api/ask-ai`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
