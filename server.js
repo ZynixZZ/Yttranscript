@@ -86,21 +86,52 @@ app.post('/api/convert', async (req, res) => {
 });
 
 async function getTranscript(videoId) {
-    // We'll use the YouTube Transcript API
     const { YoutubeTranscript } = require('youtube-transcript');
     
     try {
-        console.log('Attempting to fetch transcript for video:', videoId);
+        console.log('Checking captions availability for video:', videoId);
+        
+        // First, check if captions are available using YouTube API
+        try {
+            const captionsResponse = await youtube.captions.list({
+                part: 'snippet',
+                videoId: videoId
+            });
+
+            console.log('Captions response:', captionsResponse.data);
+
+            if (!captionsResponse.data.items || captionsResponse.data.items.length === 0) {
+                console.log('No captions found in YouTube API, trying transcript API...');
+            }
+        } catch (apiError) {
+            if (apiError.message.includes('403')) {
+                console.error('YouTube API permission error:', apiError);
+                console.log('Continuing with transcript API due to permission error...');
+            } else {
+                throw apiError;
+            }
+        }
+
+        // Try fetching transcript regardless of YouTube API response
+        console.log('Attempting to fetch transcript...');
         const transcriptItems = await YoutubeTranscript.fetchTranscript(videoId);
+        
         if (!transcriptItems || transcriptItems.length === 0) {
             throw new Error('No transcript items found');
         }
+        
         console.log('Successfully fetched transcript with', transcriptItems.length, 'items');
         return transcriptItems.map(item => item.text).join(' ');
     } catch (error) {
         console.error('Transcript Error:', error);
-        if (error.message.includes('Could not find automatic captions')) {
-            throw new Error('This video does not have automatic captions available.');
+        
+        if (error.message.includes('403')) {
+            throw new Error('YouTube API key does not have proper permissions. Please enable YouTube Data API v3 and Captions endpoint.');
+        }
+        
+        if (error.message.includes('Could not find automatic captions') || 
+            error.message.includes('Transcript is disabled')) {
+            throw new Error('This video does not have captions available.');
         } else if (error.message.includes('Video is unavailable')) {
             throw new Error('The video is unavailable or private.');
         } else {
