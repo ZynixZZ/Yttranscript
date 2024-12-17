@@ -1,13 +1,15 @@
 require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
 const { google } = require('googleapis');
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const API_KEY = process.env.YOUTUBE_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
+app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
 
@@ -22,11 +24,15 @@ app.post('/api/convert', async (req, res) => {
     try {
         const { videoId } = req.body;
         console.log('Processing video ID:', videoId);
+        console.log('Using YouTube API Key:', API_KEY ? 'Key is present' : 'Key is missing');
 
         // Get video details and transcript using the transcript endpoint
         const videoResponse = await youtube.videos.list({
             part: 'snippet',
             id: videoId
+        }).catch(error => {
+            console.error('YouTube API Error:', error.message);
+            throw error;
         });
 
         if (!videoResponse.data.items || videoResponse.data.items.length === 0) {
@@ -44,6 +50,7 @@ app.post('/api/convert', async (req, res) => {
 
     } catch (error) {
         console.error('Error details:', error);
+        console.error('Stack trace:', error.stack);
         res.status(500).json({ 
             success: false, 
             error: error.message,
